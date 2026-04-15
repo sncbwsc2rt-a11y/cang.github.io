@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>句子阅读器 - 我的书架</title>
+    <!-- Tailwind CSS v3 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <!-- PDF.js 库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <!-- jschardet 编码检测库 -->
+    <script src="https://cdn.jsdelivr.net/npm/jschardet@3.0.0/dist/jschardet.min.js"></script>
+    <!-- text-encoding 库用于支持更多编码 -->
+    <script src="https://cdn.jsdelivr.net/npm/text-encoding@0.7.0/lib/encoding.min.js"></script>
+    <!-- 统一的 Tailwind 配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#64748b',
+                        light: '#f8fafc',
+                        dark: '#1e293b',
+                        sepia: '#f4ecd8'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        serif: ['Georgia', 'Cambria', 'serif']
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.3s ease-in-out',
+                        'slide-up': 'slideUp 0.4s ease-out',
+                        'slide-down': 'slideDown 0.4s ease-out'
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' }
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' }
+                        },
+                        slideDown: {
+                            '0%': { transform: 'translateY(-20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .text-shadow {
+                text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            }
+            .no-scrollbar::-webkit-scrollbar {
+                display: none;
+            }
+            .no-scrollbar {
+                -ms-overflow-style: none;
+                scrollbar-width: none;
+            }
+            .sentence-container {
+                min-height: calc(100vh - 4rem);
+            }
+            .progress-bar {
+                height: 3px;
+                background-color: rgba(59, 130, 246, 0.3);
+                position: relative;
+                overflow: hidden;
+            }
+            .progress-bar-fill {
+                position: absolute;
+                top: 0;
+                left: 0;
+                height: 100%;
+                background-color: #3b82f6;
+                transition: width 0.3s ease;
+            }
+            .book-card {
+                transition: all 0.3s ease;
+            }
+            .book-card:hover {
+                transform: translateY(-4px);
+            }
+            .back-button {
+                transition: all 0.2s ease;
+            }
+            .back-button:hover {
+                transform: scale(1.1);
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
+    <div id="app" class="min-h-screen flex flex-col">
+        <!-- 书架页面 -->
+        <main id="library-view" class="flex-1 p-4">
+            <div class="max-w-6xl mx-auto">
+                <header class="mb-8">
+                    <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">我的书架</h1>
+                    <p class="text-gray-600 dark:text-gray-400">您的电子书籍收藏</p>
+                </header>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6" id="books-grid">
+                    <!-- 书籍卡片将在这里动态生成 -->
+                    <div class="empty-state text-center py-12" id="empty-library">
+                        <div class="text-6xl mb-4 text-gray-400">📚</div>
+                        <h3 class="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">书架空空如也</h3>
+                        <p class="text-gray-500 dark:text-gray-400 mb-6">您还没有添加任何书籍</p>
+                        <button id="add-first-book" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-colors">
+                            <i class="fa fa-plus mr-2"></i>添加书籍
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 主阅读界面 -->
+        <main id="reading-view" class="flex-1 flex flex-col items-center justify-center p-4 hidden">
+            <!-- 返回书架按钮 -->
+            <button id="back-to-library" class="absolute top-4 left-4 bg-white/80 dark:bg-gray-800/80 p-2 rounded-full shadow-lg hover:bg-white dark:hover:bg-gray-800 transition-all z-10 back-button">
+                <i class="fa fa-arrow-left text-gray-700 dark:text-gray-300 text-lg"></i>
+            </button>
+            
+            <div class="w-full max-w-2xl mx-auto text-center">
+                <div class="mb-6">
+                    <h2 id="book-title-display" class="text-xl font-semibold text-gray-900 dark:text-white mb-2"></h2>
+                    <div class="flex items-center justify-center text-sm text-gray-600 dark:text-gray-400">
+                        <span id="progress-text">0%</span>
+                        <div class="w-32 mx-3 h-1 bg-gray-300 dark:bg-gray-700 rounded-full overflow-hidden">
+                            <div id="progress-bar-fill" class="h-full bg-blue-600 transition-all duration-300"></div>
+                        </div>
+                        <span id="sentence-counter">0/0</span>
+                    </div>
+                </div>
+                
+                <div class="sentence-container flex items-center justify-center min-h-[60vh]">
+                    <p id="current-sentence" class="text-2xl font-serif leading-relaxed text-center transition-all duration-300 animate-fade-in"></p>
+                </div>
+                
+                <div class="mt-8 flex justify-center space-x-6">
+                    <button id="prev-sentence" class="bg-white dark:bg-gray-800 p-3 rounded-full shadow hover:shadow-lg transition-all">
+                        <i class="fa fa-arrow-up text-gray-700 dark:text-gray-300"></i>
+                    </button>
+                    <button id="bookmark-btn" class="bg-white dark:bg-gray-800 p-3 rounded-full shadow hover:shadow-lg transition-all">
+                        <i class="fa fa-bookmark-o text-gray-700 dark:text-gray-300"></i>
+                    </button>
+                    <button id="next-sentence" class="bg-white dark:bg-gray-800 p-3 rounded-full shadow hover:shadow-lg transition-all">
+                        <i class="fa fa-arrow-down text-gray-700 dark:text-gray-300"></i>
+                    </button>
+                </div>
+            </div>
+        </main>
+
+        <!-- 底部工具栏 -->
+        <footer class="bg-white dark:bg-gray-800 py-3 px-4 shadow-md">
+            <div class="max-w-6xl mx-auto flex justify-between items-center">
+                <button id="import-btn" class="flex items-center text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                    <i class="fa fa-upload mr-2"></i>
+                    <span>导入</span>
+                </button>
+                <button id="settings-btn" class="flex items-center text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                    <i class="fa fa-cog mr-2"></i>
+                    <span>设置</span>
+                </button>
+                <button id="bookmarks-list-btn" class="flex items-center text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                    <i class="fa fa-bookmark mr-2"></i>
+                    <span>书签</span>
+                </button>
+            </div>
+        </footer>
+
+        <!-- 导入模态框 -->
+        <div id="import-modal" class="modal fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md animate-slide-up">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white">导入电子书</h2>
+                    <button class="close-modal text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                        <i class="fa fa-times"></i>
+                    </button>
+                </div>
+                <p class="text-gray-600 dark:text-gray-400 mb-4">选择要导入的电子书文件（支持ePub、TXT、PDF格式）</p>
+                <div class="mb-4" id="encoding-selector" style="display: none;">
+                    <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">文件编码（如果显示乱码请尝试其他编码）</label>
+                    <select id="encoding-select" class="w-full p-2 border rounded-md bg-white dark:bg-gray-700 dark:border-gray-600">
+                        <option value="auto">自动检测（推荐）</option>
+                        <option value="utf-8">UTF-8</option>
+                        <option value="gbk">GBK/GB2312（中文Windows默认）</option>
+                        <option value="big5">Big5（繁体中文）</option>
+                        <option value="shift-jis">Shift-JIS（日文）</option>
+                        <option value="euc-kr">EUC-KR（韩文）</option>
+                    </select>
+                </div>
+                <div id="file-drop-area" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 transition-colors">
+                    <i class="fa fa-cloud-upload text-4xl text-gray-400 mb-2"></i>
+                    <p class="text-gray-500 dark:text-gray-400">点击或拖拽文件到此处</p>
+                    <input type="file" id="file-input" class="hidden" accept=".epub,.txt,.pdf">
+                </div>
+            </div>
+        </div>
+
+        <!-- 设置模态框 -->
+        <div id="settings-modal" class="modal fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md animate-slide-up">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white">设置</h2>
+                    <button class="close-modal text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                        <i class="fa fa-times"></i>
+                    </button>
+                </div>
+                <div class="mb-4">
+                    <label class="flex items-center justify-between">
+                        <span class="text-gray-700 dark:text-gray-300">深色模式</span>
+                        <input type="checkbox" id="theme-toggle" class="w-10 h-5 bg-gray-300 rounded-full peer focus:outline-none peer-checked:bg-blue-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all">
+                    </label>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">字体大小</label>
+                    <input type="range" id="font-size" min="16" max="32" value="24" class="w-full">
+                    <div class="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>小</span>
+                        <span>大</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 书签模态框 -->
+        <div id="bookmark-modal" class="modal fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md animate-slide-up">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-900 dark:text-white">书签</h2>
+                    <button class="close-modal text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                        <i class="fa fa-times"></i>
+                    </button>
+                </div>
+                <ul id="bookmarks-list" class="max-h-60 overflow-y-auto space-y-2">
+                    <li class="text-gray-500 dark:text-gray-400 text-center py-4">暂无书签</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 加载指示器 -->
+        <div id="loading-indicator" class="fixed inset-0 bg-black/30 z-40 hidden flex items-center justify-center">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-4 flex flex-col items-center">
+                <div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
+                <p id="loading-text" class="text-sm text-gray-700 dark:text-gray-300">加载中...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 应用状态
+        const appState = {
+            currentBook: null,
+            books: [],
+            settings: {
+                theme: 'light',
+                fontSize: 24
+            }
+        };
+
+        // DOM 元素
+        const elements = {
+            // 视图
+            libraryView: document.getElementById('library-view'),
+            readingView: document.getElementById('reading-view'),
+            
+            // 书架
+            booksGrid: document.getElementById('books-grid'),
+            emptyLibrary: document.getElementById('empty-library'),
+            addFirstBook: document.getElementById('add-first-book'),
+            
+            // 阅读界面
+            backToLibrary: document.getElementById('back-to-library'),
+            bookTitleDisplay: document.getElementById('book-title-display'),
+            currentSentence: document.getElementById('current-sentence'),
+            progressText: document.getElementById('progress-text'),
+            progressBarFill: document.getElementById('progress-bar-fill'),
+            sentenceCounter: document.getElementById('sentence-counter'),
+            prevSentence: document.getElementById('prev-sentence'),
+            nextSentence: document.getElementById('next-sentence'),
+            bookmarkBtn: document.getElementById('bookmark-btn'),
+            
+            // 工具栏
+            importBtn: document.getElementById('import-btn'),
+            settingsBtn: document.getElementById('settings-btn'),
+            bookmarksListBtn: document.getElementById('bookmarks-list-btn'),
+            
+            // 模态框
+            importModal: document.getElementById('import-modal'),
+            settingsModal: document.getElementById('settings-modal'),
+            bookmarkModal: document.getElementById('bookmark-modal'),
+            fileDropArea: document.getElementById('file-drop-area'),
+            fileInput: document.getElementById('file-input'),
+            encodingSelector: document.getElementById('encoding-selector'),
+            encodingSelect: document.getElementById('encoding-select'),
+            bookmarksList: document.getElementById('bookmarks-list'),
+            
+            // 设置
+            themeToggle: document.getElementById('theme-toggle'),
+            fontSize: document.getElementById('font-size'),
+            
+            // 加载指示器
+            loadingIndicator: document.getElementById('loading-indicator'),
+            loadingText: document.getElementById('loading-text')
+        };
+
+        // 初始化应用
+        function initApp() {
+            loadSettings();
+            loadBooks();
+            updateUI();
+            setupEventListeners();
+            applyTheme();
+            applyFontSize();
+            
+            // 显示书架页面
+            showLibrary();
+        }
+
+        // 加载设置
+        function loadSettings() {
+            const savedSettings = localStorage.getItem('sentenceReaderSettings');
+            if (savedSettings) {
+                appState.settings = { ...appState.settings, ...JSON.parse(savedSettings) };
+            }
+        }
+
+        // 保存设置
+        function saveSettings() {
+            localStorage.setItem('sentenceReaderSettings', JSON.stringify(appState.settings));
+        }
+
+        // 加载书籍
+        function loadBooks() {
+            appState.books = [];
+            const storage = localStorage;
+            
+            for (let i = 0; i < storage.length; i++) {
+                const key = storage.key(i);
+                if (key.startsWith('book-')) {
+                    try {
+                        const book = JSON.parse(storage.getItem(key));
+                        appState.books.push(book);
+                    } catch (e) {
+                        console.error('解析书籍数据失败:', e);
+                    }
+                }
+            }
+            
+            // 按最后阅读时间排序
+            appState.books.sort((a, b) => new Date(b.lastRead) - new Date(a.lastRead));
+        }
+
+        // 保存书籍
+        function saveBook(book) {
+            localStorage.setItem(`book-${book.id}`, JSON.stringify(book));
+            loadBooks(); // 重新加载书籍列表
+        }
+
+        // 更新UI
+        function updateUI() {
+            if (appState.currentBook) {
+                const currentSentence = appState.currentBook.sentences[appState.currentBook.currentSentenceIndex] || '本书已读完';
+                elements.currentSentence.textContent = currentSentence;
+                
+                // 更新进度信息
+                const progress = Math.round((appState.currentBook.currentSentenceIndex / appState.currentBook.totalSentences) * 100);
+                elements.progressText.textContent = `${progress}%`;
+                elements.progressBarFill.style.width = `${progress}%`;
+                elements.sentenceCounter.textContent = `${appState.currentBook.currentSentenceIndex + 1}/${appState.currentBook.totalSentences}`;
+                
+                // 更新标题
+                elements.bookTitleDisplay.textContent = appState.currentBook.title;
+                
+                // 更新书签状态
+                const isBookmarked = appState.currentBook.bookmarks.includes(appState.currentBook.currentSentenceIndex);
+                elements.bookmarkBtn.innerHTML = isBookmarked 
+                    ? '<i class="fa fa-bookmark text-yellow-500"></i>' 
+                    : '<i class="fa fa-bookmark-o text-gray-700 dark:text-gray-300"></i>';
+                
+                // 更新页面标题
+                document.title = `${appState.currentBook.title} - 句子阅读器`;
+            } else {
+                elements.currentSentence.textContent = '请选择一本书开始阅读';
+                elements.progressText.textContent = '0%';
+                elements.progressBarFill.style.width = '0%';
+                elements.sentenceCounter.textContent = '0/0';
+                elements.bookTitleDisplay.textContent = '句子阅读器';
+                elements.bookmarkBtn.innerHTML = '<i class="fa fa-bookmark-o text-gray-700 dark:text-gray-300"></i>';
+                document.title = '句子阅读器';
+            }
+        }
+
+        // 设置事件监听器
+        function setupEventListeners() {
+            // 文件拖放区域
+            elements.fileDropArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                elements.fileDropArea.classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');
+            });
+            
+            elements.fileDropArea.addEventListener('dragleave', () => {
+                elements.fileDropArea.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');
+            });
+            
+            elements.fileDropArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                elements.fileDropArea.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFileUpload(files[0]);
+                }
+            });
+            
+            elements.fileDropArea.addEventListener('click', () => {
+                elements.fileInput.click();
+            });
+            
+            // 显示编码选择器当选择TXT文件时
+            elements.fileInput.addEventListener('change', () => {
+                const file = elements.fileInput.files[0];
+                if (file && file.name.endsWith('.txt')) {
+                    elements.encodingSelector.style.display = 'block';
+                } else {
+                    elements.encodingSelector.style.display = 'none';
+                }
+            });
+            
+            elements.fileInput.addEventListener('change', () => {
+                const files = elements.fileInput.files;
+                if (files.length > 0) {
+                    handleFileUpload(files[0]);
+                }
+            });
+            
+            // 阅读控制
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowUp') {
+                    navigateSentence(-1);
+                } else if (e.key === 'ArrowDown') {
+                    navigateSentence(1);
+                }
+            });
+            
+            // 触摸控制
+            let touchStartY = 0;
+            let touchEndY = 0;
+            
+            document.addEventListener('touchstart', (e) => {
+                touchStartY = e.changedTouches[0].screenY;
+            });
+            
+            document.addEventListener('touchend', (e) => {
+                touchEndY = e.changedTouches[0].screenY;
+                handleSwipe();
+            });
+            
+            function handleSwipe() {
+                const swipeThreshold = 50;
+                const swipeDistance = touchStartY - touchEndY;
+                
+                if (swipeDistance > swipeThreshold) {
+                    // 向上滑动，下一句
+                    navigateSentence(1);
+                } else if (swipeDistance < -swipeThreshold) {
+                    // 向下滑动，上一句
+                    navigateSentence(-1);
+                }
+            }
+            
+            // 按钮事件
+            elements.prevSentence.addEventListener('click', () => navigateSentence(-1));
+            elements.nextSentence.addEventListener('click', () => navigateSentence(1));
+            elements.bookmarkBtn.addEventListener('click', toggleBookmark);
+            elements.backToLibrary.addEventListener('click', showLibrary);
+            elements.importBtn.addEventListener('click', () => elements.importModal.classList.remove('hidden'));
+            elements.settingsBtn.addEventListener('click', () => elements.settingsModal.classList.remove('hidden'));
+            elements.bookmarksListBtn.addEventListener('click', () => {
+                updateBookmarksList();
+                elements.bookmarkModal.classList.remove('hidden');
+            });
+            elements.addFirstBook.addEventListener('click', () => elements.importModal.classList.remove('hidden'));
+            
+            // 主题切换
+            elements.themeToggle.addEventListener('change', (e) => {
+                appState.settings.theme = e.target.checked ? 'dark' : 'light';
+                applyTheme();
+                saveSettings();
+            });
+            
+            // 字体大小调整
+            elements.fontSize.addEventListener('input', (e) => {
+                appState.settings.fontSize = parseInt(e.target.value);
+                applyFontSize();
+                saveSettings();
+            });
+            
+            // 关闭模态框
+            document.querySelectorAll('.close-modal').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    elements.importModal.classList.add('hidden');
+                    elements.settingsModal.classList.add('hidden');
+                    elements.bookmarkModal.classList.add('hidden');
+                });
+            });
+            
+            // 点击模态框外部关闭
+            document.querySelectorAll('.modal').forEach(modal => {
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        modal.classList.add('hidden');
+                    }
+                });
+            });
+            
+            // 书签跳转
+            elements.bookmarksList.addEventListener('click', (e) => {
+                if (e.target.tagName === 'LI') {
+                    const index = parseInt(e.target.dataset.index);
+                    if (!isNaN(index)) {
+                        navigateToSentence(index);
+                        elements.bookmarkModal.classList.add('hidden');
+                    }
+                }
+            });
+        }
+
+        // 显示书架页面
+        function showLibrary() {
+            // 更新书架
+            updateLibrary();
+            
+            // 切换视图
+            elements.libraryView.classList.remove('hidden');
+            elements.readingView.classList.add('hidden');
+            
+            // 更新标题
+            document.title = '我的书架 - 句子阅读器';
+        }
+
+        // 显示阅读页面
+        function showReadingView() {
+            // 切换视图
+            elements.libraryView.classList.add('hidden');
+            elements.readingView.classList.remove('hidden');
+            
+            // 更新UI
+            updateUI();
+        }
+
+        // 更新书架
+        function updateLibrary() {
+            // 清空书架
+            elements.booksGrid.innerHTML = '';
+            
+            if (appState.books.length === 0) {
+                // 显示空书架状态
+                elements.emptyLibrary.classList.remove('hidden');
+                elements.booksGrid.appendChild(elements.emptyLibrary);
+            } else {
+                // 隐藏空书架状态
+                elements.emptyLibrary.classList.add('hidden');
+                
+                // 添加书籍卡片
+                appState.books.forEach(book => {
+                    const bookCard = createBookCard(book);
+                    elements.booksGrid.appendChild(bookCard);
+                });
+            }
+        }
+
+        // 创建书籍卡片
+        function createBookCard(book) {
+            const progress = Math.round((book.currentSentenceIndex / book.totalSentences) * 100);
+            const lastRead = formatDate(book.lastRead);
+            
+            const card = document.createElement('div');
+            card.className = 'book-card bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-all cursor-pointer';
+            card.innerHTML = `
+                <div class="p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center">
+                            <div class="bg-blue-100 dark:bg-blue-900 p-3 rounded-full mr-4">
+                                <i class="fa fa-book text-blue-600 dark:text-blue-400 text-xl"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-gray-900 dark:text-white text-lg truncate" title="${book.title}">${book.title}</h3>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">${book.author || '未知作者'}</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-sm font-medium text-blue-600 dark:text-blue-400">${progress}%</span>
+                        </div>
+                    </div>
+                    <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-4">
+                        <div class="bg-blue-600 h-2 rounded-full" style="width: ${progress}%"></div>
+                    </div>
+                    <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                        <span>${book.totalSentences} 句</span>
+                        <span>最后阅读: ${lastRead}</span>
+                    </div>
+                </div>
+            `;
+            
+            // 点击卡片打开书籍
+            card.addEventListener('click', () => {
+                appState.currentBook = book;
+                showReadingView();
+            });
+            
+            return card;
+        }
+
+        // 格式化日期
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffTime = Math.abs(now - date);
+            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays === 0) {
+                return '今天';
+            } else if (diffDays === 1) {
+                return '昨天';
+            } else if (diffDays < 7) {
+                return `${diffDays} 天前`;
+            } else {
+                return date.toLocaleDateString();
+            }
+        }
+
+        // 处理文件上传
+        function handleFileUpload(file) {
+            showLoading('正在解析文件...');
+            
+            const fileExtension = file.name.split('.').pop().toLowerCase();
+            
+            switch (fileExtension) {
+                case 'txt':
+                    parseTxtFile(file);
+                    break;
+                case 'pdf':
+                    parsePdfFile(file);
+                    break;
+                case 'epub':
+                    parseEpubFile(file);
+                    break;
+                default:
+                    hideLoading();
+                    alert('不支持的文件格式。请选择ePub、TXT或PDF文件。');
+            }
+        }
+
+        // 解析TXT文件
+        function parseTxtFile(file) {
+            const reader = new FileReader();
+            const selectedEncoding = elements.encodingSelect.value;
+            
+            reader.onload = function(e) {
+                const arrayBuffer = e.target.result;
+                const uint8Array = new Uint8Array(arrayBuffer);
+                
+                // 如果用户选择了特定编码，直接使用
+                if (selectedEncoding !== 'auto') {
+                    try {
+                        const content = decodeText(uint8Array, selectedEncoding);
+                        processTxtContent(content, file);
+                    } catch (error) {
+                        console.error('编码解码失败:', error);
+                        hideLoading();
+                        alert('文件编码解析失败，请尝试其他编码格式。');
+                    }
+                    return;
+                }
+                
+                // 使用jschardet检测文件编码
+                const detectionResult = jschardet.detect(uint8Array);
+                const detectedEncoding = detectionResult.encoding || 'utf-8';
+                const confidence = detectionResult.confidence || 0;
+                
+                console.log('检测到的编码:', detectedEncoding, '置信度:', confidence);
+                
+                // 尝试多种编码方案
+                const encodingOptions = [
+                    detectedEncoding,
+                    'gbk',  // 中文Windows常用编码
+                    'utf-8' // 通用编码
+                ];
+                
+                // 去重
+                const uniqueEncodings = [...new Set(encodingOptions)];
+                
+                // 尝试第一种编码
+                decodeAndProcessWithFallback(uint8Array, uniqueEncodings, 0, file);
+            };
+            
+            reader.onerror = function(error) {
+                console.error('读取文件失败:', error);
+                hideLoading();
+                alert('读取TXT文件失败，请重试。错误: ' + error.message);
+            };
+            
+            // 先读取为ArrayBuffer以便检测编码
+            reader.readAsArrayBuffer(file);
+        }
+
+        // 尝试解码并处理内容，如果失败则尝试下一个编码
+        function decodeAndProcessWithFallback(uint8Array, encodings, index, file) {
+            if (index >= encodings.length) {
+                // 所有编码都尝试失败
+                console.error('所有编码尝试失败');
+                hideLoading();
+                alert('文件编码无法自动识别，请尝试手动选择编码格式。');
+                return;
+            }
+            
+            const encoding = encodings[index];
+            console.log('尝试编码:', encoding, '(', index + 1, '/', encodings.length, ')');
+            
+            try {
+                const content = decodeText(uint8Array, encoding);
+                
+                // 简单验证解码结果是否合理（检查不可打印字符的比例）
+                const printableChars = content.replace(/[^\x20-\x7E\u4E00-\u9FFF]/g, '');
+                const printableRatio = printableChars.length / content.length;
+                
+                console.log('解码结果长度:', content.length, '可打印字符比例:', printableRatio.toFixed(2));
+                
+                // 如果可打印字符比例过低，认为解码失败
+                if (printableRatio < 0.5 && content.length > 10) {
+                    console.log('可打印字符比例过低，尝试下一个编码');
+                    decodeAndProcessWithFallback(uint8Array, encodings, index + 1, file);
+                    return;
+                }
+                
+                processTxtContent(content, file);
+            } catch (error) {
+                console.error('编码', encoding, '解码失败:', error);
+                decodeAndProcessWithFallback(uint8Array, encodings, index + 1, file);
+            }
+        }
+
+        // 解码文本内容，支持多种编码方案
+        function decodeText(uint8Array, encoding) {
+            let content;
+            
+            // 首先尝试使用text-encoding库（更全面的编码支持）
+            if (window.encoding) {
+                try {
+                    const decoder = new window.encoding.TextDecoder(encoding);
+                    content = decoder.decode(uint8Array);
+                    return content;
+                } catch (e) {
+                    console.log('text-encoding解码失败，尝试其他方法:', e);
+                }
+            }
+            
+            // 尝试使用标准的TextDecoder
+            if (window.TextDecoder) {
+                try {
+                    const decoderEncoding = mapEncoding(encoding);
+                    const decoder = new TextDecoder(decoderEncoding, { fatal: false });
+                    content = decoder.decode(uint8Array);
+                    return content;
+                } catch (e) {
+                    console.log('TextDecoder解码失败，尝试其他方法:', e);
+                }
+            }
+            
+            // 最后尝试使用FileReader方法（作为最后的备选方案）
+            const tempReader = new FileReader();
+            tempReader.readAsText(new Blob([uint8Array]), encoding);
+            tempReader.onload = function(e) {
+                return e.target.result;
+            };
+            
+            throw new Error('所有解码方法都失败了');
+        }
+
+        // 编码映射函数（处理常见编码名称差异）
+        function mapEncoding(encoding) {
+            const encodingMap = {
+                'gb2312': 'gbk',
+                'gbk': 'gbk',
+                'big5': 'big5',
+                'shift_jis': 'shift-jis',
+                'sjis': 'shift-jis',
+                'euc-jp': 'euc-jp',
+                'euc-kr': 'euc-kr',
+                'windows-1251': 'cp1251',
+                'windows-1252': 'cp1252',
+                'iso-8859-1': 'latin1',
+                'iso-8859-2': 'latin2',
+                'iso-8859-9': 'latin5',
+                'cp936': 'gbk',
+                'ms936': 'gbk',
+                'x-windows-936': 'gbk',
+                'x-mswin-936': 'gbk'
+            };
+            
+            const lowerEncoding = encoding.toLowerCase();
+            return encodingMap[lowerEncoding] || encoding;
+        }
+
+        // 处理TXT内容
+        function processTxtContent(content, file) {
+            // 清理BOM标记
+            if (content.charCodeAt(0) === 0xFEFF) {
+                content = content.slice(1);
+            }
+            
+            // 按句子分割
+            const sentences = content
+                .split(/(?<=[。！？.!?])\s*/)
+                .filter(sentence => sentence.trim().length > 0)
+                .map(sentence => sentence.trim());
+            
+            // 创建书籍对象
+            const newBook = {
+                id: 'txt-book-' + Date.now(),
+                title: file.name.replace(/\.[^/.]+$/, ""),
+                author: '未知作者',
+                sentences: sentences,
+                totalSentences: sentences.length,
+                currentSentenceIndex: 0,
+                readingTime: Math.ceil(sentences.length / 200), // 估算阅读时间（分钟）
+                bookmarks: [],
+                lastRead: new Date().toISOString()
+            };
+            
+            // 设置当前书籍并保存
+            appState.currentBook = newBook;
+            saveBook(newBook);
+            
+            // 处理导入完成
+            hideLoading();
+            elements.importModal.classList.add('hidden');
+            
+            // 显示阅读页面
+            showReadingView();
+        }
+
+        // 解析PDF文件
+        function parsePdfFile(file) {
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                const arrayBuffer = e.target.result;
+                
+                // 使用PDF.js解析PDF
+                pdfjsLib.getDocument(arrayBuffer).promise.then(pdfDoc => {
+                    const totalPages = pdfDoc.numPages;
+                    let sentences = [];
+                    let currentPage = 1;
+                    
+                    function processPage(pageNum) {
+                        showLoading(`正在解析第 ${pageNum}/${totalPages} 页...`);
+                        
+                        return pdfDoc.getPage(pageNum).then(page => {
+                            return page.getTextContent().then(textContent => {
+                                const pageText = textContent.items.map(item => item.str).join(' ');
+                                
+                                // 按句子分割
+                                const pageSentences = pageText
+                                    .split(/(?<=[。！？.!?])\s*/)
+                                    .filter(sentence => sentence.trim().length > 0)
+                                    .map(sentence => sentence.trim());
+                                
+                                sentences = sentences.concat(pageSentences);
+                                
+                                if (pageNum < totalPages) {
+                                    return processPage(pageNum + 1);
+                                } else {
+                                    // 所有页面处理完成
+                                    const newBook = {
+                                        id: 'pdf-book-' + Date.now(),
+                                        title: file.name.replace(/\.[^/.]+$/, ""),
+                                        author: '未知作者',
+                                        sentences: sentences,
+                                        totalSentences: sentences.length,
+                                        currentSentenceIndex: 0,
+                                        readingTime: Math.ceil(sentences.length / 150), // PDF阅读速度较慢
+                                        bookmarks: [],
+                                        lastRead: new Date().toISOString()
+                                    };
+                                    
+                                    appState.currentBook = newBook;
+                                    saveBook(newBook);
+                                    
+                                    hideLoading();
+                                    elements.importModal.classList.add('hidden');
+                                    
+                                    // 显示阅读页面
+                                    showReadingView();
+                                }
+                            });
+                        });
+                    }
+                    
+                    // 开始处理第一页
+                    processPage(1).catch(error => {
+                        console.error('PDF解析失败:', error);
+                        hideLoading();
+                        alert('PDF文件解析失败，请重试。错误: ' + error.message);
+                    });
+                }).catch(error => {
+                    console.error('PDF加载失败:', error);
+                    hideLoading();
+                    alert('PDF文件加载失败，请重试。错误: ' + error.message);
+                });
+            };
+            
+            reader.onerror = function() {
+                hideLoading();
+                alert('读取PDF文件失败，请重试。');
+            };
+            
+            reader.readAsArrayBuffer(file);
+        }
+
+        // 解析ePub文件（简化版）
+        function parseEpubFile(file) {
+            hideLoading();
+            alert('ePub格式支持正在开发中，敬请期待！');
+        }
+
+        // 导航到上一句或下一句
+        function navigateSentence(direction) {
+            if (!appState.currentBook) return;
+            
+            const newIndex = appState.currentBook.currentSentenceIndex + direction;
+            
+            if (newIndex >= 0 && newIndex < appState.currentBook.totalSentences) {
+                appState.currentBook.currentSentenceIndex = newIndex;
+                appState.currentBook.lastRead = new Date().toISOString();
+                saveBook(appState.currentBook);
+                updateUI();
+            }
+        }
+
+        // 导航到指定句子
+        function navigateToSentence(index) {
+            if (!appState.currentBook) return;
+            
+            if (index >= 0 && index < appState.currentBook.totalSentences) {
+                appState.currentBook.currentSentenceIndex = index;
+                appState.currentBook.lastRead = new Date().toISOString();
+                saveBook(appState.currentBook);
+                updateUI();
+            }
+        }
+
+        // 切换书签状态
+        function toggleBookmark() {
+            if (!appState.currentBook) return;
+            
+            const currentIndex = appState.currentBook.currentSentenceIndex;
+            const bookmarkIndex = appState.currentBook.bookmarks.indexOf(currentIndex);
+            
+            if (bookmarkIndex === -1) {
+                // 添加书签
+                appState.currentBook.bookmarks.push(currentIndex);
+            } else {
+                // 移除书签
+                appState.currentBook.bookmarks.splice(bookmarkIndex, 1);
+            }
+            
+            saveBook(appState.currentBook);
+            updateUI();
+        }
+
+        // 更新书签列表
+        function updateBookmarksList() {
+            if (!appState.currentBook || appState.currentBook.bookmarks.length === 0) {
+                elements.bookmarksList.innerHTML = '<li class="text-gray-500 dark:text-gray-400 text-center py-4">暂无书签</li>';
+                return;
+            }
+            
+            const bookmarksHtml = appState.currentBook.bookmarks
+                .map(index => {
+                    const sentence = appState.currentBook.sentences[index];
+                    const displayText = sentence.length > 50 ? sentence.substring(0, 50) + '...' : sentence;
+                    return `<li class="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors" data-index="${index}">
+                        <div class="flex justify-between items-start mb-1">
+                            <span class="text-sm font-medium text-blue-600 dark:text-blue-400">第 ${index + 1} 句</span>
+                            <span class="text-xs text-gray-500 dark:text-gray-400">${Math.round((index / appState.currentBook.totalSentences) * 100)}%</span>
+                        </div>
+                        <p class="text-sm text-gray-800 dark:text-gray-200">${displayText}</p>
+                    </li>`;
+                })
+                .join('');
+            
+            elements.bookmarksList.innerHTML = bookmarksHtml;
+        }
+
+        // 应用主题
+        function applyTheme() {
+            const isDark = appState.settings.theme === 'dark';
+            document.documentElement.classList.toggle('dark', isDark);
+            elements.themeToggle.checked = isDark;
+        }
+
+        // 应用字体大小
+        function applyFontSize() {
+            elements.currentSentence.style.fontSize = appState.settings.fontSize + 'px';
+            elements.fontSize.value = appState.settings.fontSize;
+        }
+
+        // 显示加载指示器
+        function showLoading(text = '加载中...') {
+            elements.loadingText.textContent = text;
+            elements.loadingIndicator.classList.remove('hidden');
+        }
+
+        // 隐藏加载指示器
+        function hideLoading() {
+            elements.loadingIndicator.classList.add('hidden');
+        }
+
+        // 启动应用
+        document.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
